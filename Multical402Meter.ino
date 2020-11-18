@@ -67,8 +67,8 @@ char*  units[65] = {"","Wh","kWh","MWh","GWh","j","kj","Mj",
         "s","ms","days","RTC-Q","Datetime"};
 
 // Pin definitions
-#define PIN_KAMSER_RX  D3  // Kamstrup IR interface RX
-#define PIN_KAMSER_TX  D4  // Kamstrup IR interface TX
+#define PIN_KAMSER_RX  D5  // Kamstrup IR interface RX
+#define PIN_KAMSER_TX  D7  // Kamstrup IR interface TX
 #define PIN_LED        13  // Standard Arduino LED
 
 
@@ -77,6 +77,13 @@ char*  units[65] = {"","Wh","kWh","MWh","GWh","j","kj","Mj",
 SoftwareSerial kamSer(PIN_KAMSER_RX, PIN_KAMSER_TX, false);  // Initialize serial
 
 void setup () {
+  pinMode(D3, OUTPUT);
+  pinMode(D4, OUTPUT);
+  pinMode(D8, OUTPUT);
+  digitalWrite(D3, HIGH);
+  digitalWrite(D4, HIGH);
+  digitalWrite(D8, LOW);
+  
   Serial.begin(115200);
   Serial.println("BOOT");
   
@@ -86,7 +93,7 @@ void setup () {
     Serial.println(WiFi.localIP());
   }
   client.setServer(mqtt_server,1883);
-  
+
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, 0);
   
@@ -155,7 +162,7 @@ void loop () {
   }
   
   digitalWrite(PIN_LED, digitalRead(PIN_KAMSER_RX));
-  delay(5000);
+  delay(2000);
 }
 
 float kamReadReg(unsigned short kreg) {
