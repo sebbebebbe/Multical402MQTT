@@ -1,9 +1,25 @@
 #include <SoftwareSerial.h>
+#include <PubSubClient.h>
+#include <ESP8266WiFi.h>
+#include "arduino_secrets.h"
+
+//WIFI
+const char* ssid = SECRET_SSID;
+const char* password = SECRET_WIFI_PASSWORD;
+
+//MQTT
+#define mqtt_server "192.168.88.99"
+#define mqtt_user ""
+#define mqtt_password ""
+#define base_topic "sensor/heater/"
+
+WiFiClient wifiClient;
+PubSubClient client(wifiClient);
 
 //Kamstrup setup
-// Kamstrup Multical 601
+// Kamstrup Multical 402
 word const kregnums[] = { 0x003C,0x0050,0x0056,0x0057,0x0059,0x004a,0x0044 };                                                   // The registers we want to get out of the meter
-char* kregstrings[]   = { "Energy","Current Power","Temperature t1","Temperature t2","Temperature diff", "Flow", "Volumen 1" }; // The name of the registers we want to get out of the meter in the same order as above
+char* kregstrings[]   = { "energy","power","temperature_t1","temperature_t2","temperature_diff", "flow", "volume" }; // The name of the registers we want to get out of the meter in the same order as above
 #define NUMREGS 7                                                                                                               // Number of registers above
 #define KAMBAUD 1200
 
@@ -59,14 +75,18 @@ char*  units[65] = {"","Wh","kWh","MWh","GWh","j","kj","Mj",
 // Kamstrup optical IR serial
 #define KAMTIMEOUT 800  // Kamstrup timeout after transmit
 SoftwareSerial kamSer(PIN_KAMSER_RX, PIN_KAMSER_TX, false);  // Initialize serial
-//SoftwareSerial esp8266Ser(PIN_ESP_RX, PIN_ESP_TX, false); //Initialize serial for ESP communication
-//SoftwareSerial kamSer;
-
 
 void setup () {
   Serial.begin(115200);
-  //esp8266Ser.begin(9600);
   Serial.println("BOOT");
+  
+  if (connectWIFI()) {
+    Serial.println("Ready");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  }
+  client.setServer(mqtt_server,1883);
+  
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, 0);
   
@@ -74,15 +94,11 @@ void setup () {
   pinMode(PIN_KAMSER_RX,INPUT);
   pinMode(PIN_KAMSER_TX,OUTPUT);
   
-  //Serial1.begin(KAMBAUD,SERIAL_8N2);
-  //kamSer.begin(KAMBAUD, SWSERIAL_8N2, PIN_KAMSER_RX, PIN_KAMSER_TX, false,256);
   kamSer.begin(KAMBAUD);
   
   delay(200);
   
-  //Serial.println("\n[testKamstrup]");
-  // poll the Kamstrup registers for data 
-    for (int kreg = 0; kreg < NUMREGS; kreg++) {
+ for (int kreg = 0; kreg < NUMREGS; kreg++) {
       kamReadReg(kreg);
       delay(100);
   }
@@ -90,8 +106,49 @@ void setup () {
    Serial.println("BOOT done.");
 }
 
+boolean connectWIFI()
+{
+  Serial.println("Connecting to WIFI");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  WiFi.hostname("Heater MQTT Sensor");
+  int count = 0;
+  while (count < 20) {
+    if (WiFi.status() == WL_CONNECTED) {
+      return (true);
+    }
+    delay(500);
+    count++;
+  }
+  Serial.println("Wifi Connection timed out.");
+  return false;
+}
+void reconnect() {
+  // Loop until we're reconnected
+  while (!client.connected()) {
+    Serial.print("Attempting MQTT connection...");
+    // Attempt to connect
+    // If you do not want to use a username and password, change next line to
+    // if (client.connect("ESP8266Client")) {
+    if (client.connect("ESP8266 Heater Sensor", mqtt_user, mqtt_password)) {
+      Serial.println("connected");
+    } else {
+      Serial.print("failed, rc=");
+      Serial.print(client.state());
+      Serial.println(" try again in 5 seconds");
+      // Wait 5 seconds before retrying
+      delay(5000);
+    }
+  }
+}
+
 void loop () {
-  // poll the Kamstrup registers for data 
+
+  if (!client.connected()) {
+    reconnect();
+  }
+  client.loop();
+  
   for (int kreg = 0; kreg < NUMREGS; kreg++) {
     kamReadReg(kreg);
     delay(100);
@@ -101,7 +158,6 @@ void loop () {
   delay(5000);
 }
 
-// kamReadReg - read a Kamstrup register
 float kamReadReg(unsigned short kreg) {
 
   byte recvmsg[40];  // buffer of bytes to hold the received data
@@ -126,6 +182,14 @@ float kamReadReg(unsigned short kreg) {
     Serial.print(rval);
     Serial.print(" ");
     Serial.println();
+
+    char result[100];   // array to hold the result.
+
+    strcpy(result,base_topic); // copy string one into the result.
+    strcat(result,kregstrings[kreg]);
+    
+    //Serial.println(result);
+    client.publish(result,String(rval).c_str(),true);
     
     return rval;
   }
